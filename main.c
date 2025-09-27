@@ -34,19 +34,19 @@ void GPIO_Init(void) {
     GPIOB->MODER |= (0b01 << GPIO_MODER_MODER10_Pos);
     GPIOC->MODER &= ~(GPIO_MODER_MODER7); // PC7 for display
     GPIOC->MODER |= (0b01 << GPIO_MODER_MODER7_Pos);
-    
+
     // Button inputs (with internal pull-ups)
     GPIOA->MODER &= ~(GPIO_MODER_MODER10); // PA10 - car count increase
-    GPIOA->PUPDR |= (0b01 << GPIO_PUPDR_PUPDR10_Pos); // pull-up
-    
+    GPIOA->PUPDR |= (0b01 << GPIO_PUPDR_PUPD10_Pos); // pull-up
+
     GPIOB->MODER &= ~(GPIO_MODER_MODER3 | GPIO_MODER_MODER4 | GPIO_MODER_MODER5); // PB3, PB4, PB5
-    GPIOB->PUPDR |= (0b01 << GPIO_PUPDR_PUPDR3_Pos) | (0b01 << GPIO_PUPDR_PUPDR5_Pos); // pull-up for PB3, PB5
+    GPIOB->PUPDR |= (0b01 << GPIO_PUPDR_PUPD3_Pos) | (0b01 << GPIO_PUPDR_PUPD5_Pos); // pull-up for PB3, PB5
     // PB4 emergency mode - no pull-up (external circuit handles)
-    
+
     // LED outputs - Traffic Lights
     GPIOA->MODER &= ~(GPIO_MODER_MODER5 | GPIO_MODER_MODER6 | GPIO_MODER_MODER7); // PA5 blue, PA6 red, PA7 yellow
     GPIOA->MODER |= (0b01 << GPIO_MODER_MODER5_Pos) | (0b01 << GPIO_MODER_MODER6_Pos) | (0b01 << GPIO_MODER_MODER7_Pos);
-    
+
     GPIOB->MODER &= ~(GPIO_MODER_MODER6); // PB6 green
     GPIOB->MODER |= (0b01 << GPIO_MODER_MODER6_Pos);
 }
@@ -57,7 +57,7 @@ void Display_Number(char rx) {
     GPIOA->ODR &= ~(1 << 8); // PA8
     GPIOA->ODR &= ~(1 << 9); // PA9
     GPIOB->ODR &= ~(1 << 10); // PB10
-    
+
     switch (rx) {
         case '0': break; // 0000 -> ทุกตัวดับ
         case '1': GPIOC->ODR |= (1 << 7); break; // 0001
@@ -73,40 +73,79 @@ void Display_Number(char rx) {
     }
 }
 // -------------------- Traffic Light Functions --------------------
-void turn_off_all_lights(void){
+void turn_off_all_lights_lane1(void){  //ใช้กับไฟเลน 1
     GPIOA->ODR &= ~(1 << 5); // blue off
     GPIOA->ODR &= ~(1 << 6); // red off
     GPIOA->ODR &= ~(1 << 7); // yellow off
     GPIOB->ODR &= ~(1 << 6); // green off
 }
 
-void set_green_light(void) {
+void set_green_light_lane1(void) {
     turn_off_all_lights();
     GPIOB->ODR |= (1 << 6); // PB6 green - Lane 1 green
 }
 
-void set_red_light(void) {
+void set_red_light_lane1(void) {
     GPIOA->ODR |= (1 << 6); // PA6 red - Lane 1 red
 }
 
-void set_yellow_light(void) {
+void set_yellow_light_lane1(void) {
     GPIOA->ODR |= (1 << 7); // PA7 yellow - Lane 1 yellow
 }
 
+
+//--- set traffic light lane 2 ยังไม่ทำ ------//
+
+
+
+//------------------------------------------//
+
 // -------------------- Countdown Display Function --------------------
-uint32_t countdown_display(uint32_t seconds, uint8_t light_status, uint32_t car_count) {
+uint32_t countdown_display_lane1(uint32_t seconds, uint8_t light_status, uint32_t car_count) {
     // ใช้ signed int เพื่อให้วนไปถึง 0 ได้
     for (int32_t remaining = seconds; remaining >= 0; remaining--) {
-        // แสดงตัวเลข countdown
+
         Display_Number('0' + remaining);
 
         // เปิดไฟตามสถานะ
         if (light_status == 0) {
-            set_green_light();
+            set_green_light_lane1();
+            //----code set ไฟแดงเลน 2 -----
         } else if (light_status == 1) {
-            set_yellow_light();
+            set_yellow_light_lane1();
         } else if (light_status == 2) {
-            set_red_light();
+            set_red_light_lane1();
+        }
+
+
+        // ดีเลย์ประมาณ 1 วินาที
+        for (volatile uint32_t i = 0; i < THRESHOLD; i++) {
+            // busy-wait 1 วินาที
+        }
+
+    }
+    if (car_count>0){
+    	return car_count-seconds;
+    }else{
+    	return car_count;
+    }
+}
+
+uint32_t countdown_display_lane2(uint32_t seconds, uint32_t car_count) {
+    // ใช้ signed int เพื่อให้วนไปถึง 0 ได้
+    for (int32_t remaining = seconds; remaining >= 0; remaining--) {
+
+        Display_Number('0' + remaining);
+
+        // เปิดไฟตามสถานะ
+        while (remaining>=seconds-4) {
+            //ไฟเขียวเลน 2 ติด ยังไม่ได้สร้าง Function traffic light ของเลน 2 !!
+        } 
+        while (remaining==2) {
+            //ไฟเหลืองเลน 2 ติด
+        } 
+        while (remaining==1){
+           //ไฟแดงเลน 2 ติด
         }
 
         // ดีเลย์ประมาณ 1 วินาที
@@ -114,91 +153,102 @@ uint32_t countdown_display(uint32_t seconds, uint8_t light_status, uint32_t car_
             // busy-wait 1 วินาที
         }
 
-        // ลด car_count เฉพาะตอนเป็นไฟเขียว
-        if (light_status == 0 && car_count > 0) {
-            car_count--;
+    }
+    if (car_count>0){
+    	return car_count-(seconds-2);
+    }else{
+    	return car_count;
+    }
+}
+
+uint32_t time_check(uint32_t car_count) {
+    if (car_count == 0) {
+        t = 1;
+    } else {
+        if (car_count<10){
+            t = car_count;
+        } else{
+            t=9;
         }
+    }
+    return t
+}
+
+
+uint32_t wait_for_release_button(uint32_t car_count) {
+    uint8_t prev_PA10 = 1;
+    uint8_t prev_PB3  = 1;
+
+    while ((GPIOB->IDR & (1 << 5)) != 0) {   // รอจนกด PB5
+        uint8_t curr_PA10 = (GPIOA->IDR & (1 << 10)) ? 1 : 0;
+        uint8_t curr_PB3  = (GPIOB->IDR & (1 << 3)) ? 1 : 0;
+
+        // PA10: เพิ่มรถ (edge: 1 -> 0)
+        if (prev_PA10 == 1 && curr_PA10 == 0) {
+            car_count++;
+        }
+        prev_PA10 = curr_PA10;
+
+        // PB3: ลดรถ (edge: 1 -> 0)
+        if (prev_PB3 == 1 && curr_PB3 == 0) {
+            if (car_count > 0) car_count--;
+        }
+        prev_PB3 = curr_PB3;
     }
     return car_count;
 }
-
-void wait_for_release_button(void) {
-    while ( (GPIOB->IDR & (1 << 5)) != 0 ) {
-        // วนอยู่ตรงนี้จนกว่าจะกดปุ่ม (ค่าในบิต PB5 = 0)
-    }
-}
-
-
 
 // -------------------- Main Program --------------------
 int main(void) {
     USART2_Init(); // cool terms
     GPIO_Init();   // gpios
-    
+
     // Traffic light variables
     volatile uint32_t car_count[2] = {0,0};
     uint32_t n = 0;
     uint32_t t = 3; // default green time
     uint8_t release_car_pressed = 0;
-    
+
     // Button state tracking (for edge detection)
     uint8_t prev_PA10 = 1; // car count increase
-    uint8_t prev_PB3 = 1;  // car count decrease  
+    uint8_t prev_PB3 = 1;  // car count decrease
     uint8_t prev_PB5 = 1;  // release cars
     uint8_t prev_PB4 = 0;  // emergency mode
-    
-    turn_off_all_lights(); // start with all lights off
-    
-    while (1) {
-        // Read current button states
-        uint8_t a = (GPIOA->IDR & (1 << 10)) ? 1 : 0;
-        uint8_t curr_PB3 = (GPIOB->IDR & (1 << 3)) ? 1 : 0;
-        uint8_t curr_PB5 = (GPIOB->IDR & (1 << 5)) ? 1 : 0;
-        uint8_t curr_PB4 = (GPIOB->IDR & (1 << 4)) ? 1 : 0;
-        
-        // --- Button Handling (Edge Detection) ---
-        // PA10: Car Count Increase
-        if (prev_PA10 == 1 && curr_PA10 == 0) {
-            car_count[n%2] = (car_count[n%2] + 1); 
-        }
-        prev_PA10 = curr_PA10;
-        
-        // PB3: Car Count Decrease
-        if (prev_PB3 == 1 && curr_PB3 == 0) {
-            car_count[n%2] = (car_count[n%2] == 0) ? 0 : (car_count[n%2] - 1);
-        }
-        prev_PB3 = curr_PB3;
-        
-        // PB5: Release Cars
-        if (prev_PB5 == 1 && curr_PB5 == 0) {
-            release_car_pressed = 1;
-        prev_PB5 = curr_PB5;
-        
-        // --- Main Traffic Light Logic ---
-        // Single traffic light setup - only Lane 1 exists
-        
-        // GREEN PHASE - Lane 1 green (no cars waiting, show car count)
-        car_count[n%2] = countdown_display(t, 0, car_count[n%2]);
-        n++;
-        
-        // YELLOW PHASE
-        turn_off_all_lights();
-        car_count[n%2] = countdown_display(1, 1, car_count[n%2]);
-        t=car_count[(n+1)%2]
-        
-        // RED PHASE - Lane 1 red (cars waiting, countdown display)
-        turn_off_all_lights();
-        car_count[n%2] = countdown_display(t, 2, car_count[n%2]);
 
-        wait_for_release_button();
-        turn_off_all_lights();
-        
-        // --- USART Debug Output ---
-        if (USART2->SR & USART_SR_RXNE) {
-            char rx = USART2_ReadChar();
-            // You can add debug commands here if needed
-            // For example: 'r' to reset, 'c' to show car count, etc.
-        }
-    }
-}
+    turn_off_all_lights(); // start with all lights off
+
+    while (1) {
+        //เลน 1
+    	if (n%2 == 0){
+        // GREEN PHASE - Lane 1 green (no cars waiting, show car count)
+        turn_off_all_lights_lane1();
+        car_count[n%2] = countdown_display_lane1(t, 0, car_count[n%2]);
+
+        // YELLOW PHASE
+        turn_off_all_lights_lane1();
+        car_count[n%2] = countdown_display_lane1(1, 1, car_count[n%2]);
+
+        turn_off_all_lights_lane1();
+        // RED PHASE - Lane 1 red (cars waiting, countdown display)
+        car_count[n%2] = countdown_display_lane1(1, 2, car_count[n%2]);
+
+
+        // Wait for release button or timeout
+        car_count[(n+1)%2] = wait_for_release_button(car_count[(n+1)%2]);
+        t=time_check(car_count[(n+1)%2]);
+        n++;
+        //แดงเลน 1 ค้างไว้
+    } 
+    //เลน 2
+    else{
+        //ใช้ BCD ให้นับไฟทั้งเขียว+เหลือง+แดง ของเลน 2 ก็เหมือนเวลาไฟแดงเลน 1 ระหว่างนั้นไฟแดงเลน 1 ติดค้างไว้
+    	car_count[n%2] = countdown_display_lane2(t+2, 2, car_count[n%2]);
+
+    	//เพิ่มจำนวนรถของอีกเลน
+    	car_count[(n+1)%2] = wait_for_release_button(car_count[(n+1)%2]);
+        t=time_check(car_count[(n+1)%2]);
+    	n++;
+        //ไฟแดงของเลน 2 ติดค้างไว้
+     }
+   }
 }
