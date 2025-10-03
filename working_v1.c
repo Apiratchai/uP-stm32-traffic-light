@@ -5,6 +5,13 @@
  * @brief          : RGB PWM on PB15 (TIM1_CH3N), PB14 (TIM1_CH2N), PB1 (TIM3_CH4)
  ************************************************************************
  */
+/**
+ **********************************************************************
+ * @file           : main.c
+ * @author         : You
+ * @brief          : RGB PWM on PB15 (TIM1_CH3N), PB14 (TIM1_CH2N), PB1 (TIM3_CH4)
+ **********************************************************************
+ */
 #define STM32F411xE
 #include <stdint.h>
 #include "stm32f4xx.h"
@@ -363,7 +370,7 @@ int main(void) {
     // Traffic light variables
     volatile uint32_t car_count[2] = {0,0};
     uint32_t n = 0;
-    uint32_t t = 3; // default green time
+    uint32_t t = 1; // default green time
 
     turn_off_all_lights_lane1(); // start with all lights off
 
