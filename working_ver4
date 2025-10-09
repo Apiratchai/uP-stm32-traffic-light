@@ -1,0 +1,325 @@
+/**
+ **********************************************************************
+ * @file            : main.c
+ * @author          : You
+ * @brief           : RGB PWM, Traffic Logic, Buzzer, UART, and Emergency Mode
+ **********************************************************************
+ */
+#define STM32F411xE
+#include <stdint.h>
+#include <stdio.h> // Required for sprintf
+#include "stm32f4xx.h"
+
+// --- Global Variables ---
+volatile uint32_t THRESHOLD = 1333333u; // This value is calibrated by the potentiometer
+#define MAX_BRIGHT 1000
+volatile uint32_t car_count[2] = {0,0};
+char stringOut[100];
+volatile uint8_t is_emergency_mode = 0;
+
+// --- Forward Declarations ---
+void check_emergency_button(void);
+
+// --- Helper Functions ---
+static inline uint16_t clamp_u16(uint16_t v, uint16_t hi) {
+    return (v > hi) ? hi : v;
+}
+
+// *** NEW DELAY FUNCTION FOR EMERGENCY MODE ***
+// This uses the calibrated THRESHOLD for timing but remains responsive.
+void responsive_threshold_delay(uint32_t duration_loops) {
+    // We will check the emergency button periodically, not on every single loop.
+    // This makes the delay accurate while still being very responsive.
+    // A power of 2 (like 1024) is efficient for the CPU to check.
+    const uint32_t check_interval = 1024;
+
+    for (volatile uint32_t i = 0; i < duration_loops; i++) {
+        // Using a bitwise AND is a fast way to check `if (i % check_interval == 0)`
+        if ((i & (check_interval - 1)) == 0) {
+            check_emergency_button();
+            if (is_emergency_mode == 0) {
+                // If the mode was turned OFF during the delay, exit immediately.
+                return;
+            }
+        }
+    }
+}
+
+// Original delay function for countdowns, which relies on the calibrated THRESHOLD
+void delay_ms(uint32_t ms) {
+    volatile uint32_t count_for_1ms = THRESHOLD / 1000;
+    for (uint32_t i = 0; i < ms; i++) {
+        for (volatile uint32_t j = 0; j < count_for_1ms; j++) {}
+        check_emergency_button();
+        if (is_emergency_mode) return;
+    }
+}
+
+
+// --- All other functions (USART, GPIO_Init, PWM_Init, etc.) remain the same ---
+void USART2_Init(void) {
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+    GPIOA->MODER &= ~(GPIO_MODER_MODER2 | GPIO_MODER_MODER3);
+    GPIOA->MODER |= (0b10 << GPIO_MODER_MODER2_Pos) | (0b10 << GPIO_MODER_MODER3_Pos);
+    GPIOA->AFR[0] &= ~(GPIO_AFRL_AFSEL2 | GPIO_AFRL_AFSEL3);
+    GPIOA->AFR[0] |= (0b0111 << GPIO_AFRL_AFSEL2_Pos) | (0b0111 << GPIO_AFRL_AFSEL3_Pos);
+    USART2->CR1 = 0; USART2->CR1 |= USART_CR1_UE; USART2->CR1 &= ~USART_CR1_M;
+    USART2->CR2 &= ~USART_CR2_STOP; USART2->BRR = 139; USART2->CR1 |= USART_CR1_TE;
+    USART2->CR1 |= USART_CR1_RE;
+}
+void vdg_UART_TxString(char strOut[]) {
+    for (uint8_t idx = 0; strOut[idx] != '\0'; idx++) {
+        while((USART2->SR & USART_SR_TXE) == 0);
+        USART2->DR = strOut[idx];
+    }
+}
+void log_car_counts(void) {
+    sprintf(stringOut, "Lane 1 Cars: %lu, Lane 2 Cars: %lu\r\n", (unsigned long)car_count[0], (unsigned long)car_count[1]);
+    vdg_UART_TxString(stringOut);
+}
+void log_emergency_on(void) {
+    sprintf(stringOut, "EMERGENCY MODE ACTIVATED. Resetting car counts.\r\n");
+    vdg_UART_TxString(stringOut);
+}
+void log_emergency_off(void) {
+    sprintf(stringOut, "Emergency mode deactivated. Resuming normal operation.\r\n");
+    vdg_UART_TxString(stringOut);
+}
+void log_remaining_cars(int lane_idx) {
+    sprintf(stringOut, "Lane %d cycle finished. Remaining Lane 1 Cars: %lu, Lane 2 Cars: %lu\r\n", lane_idx + 1, (unsigned long)car_count[0], (unsigned long)car_count[1]);
+    vdg_UART_TxString(stringOut);
+}
+void GPIO_Init(void) {
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
+    GPIOA->MODER &= ~(GPIO_MODER_MODER8 | GPIO_MODER_MODER9);
+    GPIOA->MODER |= (0b01 << GPIO_MODER_MODER8_Pos) | (0b01 << GPIO_MODER_MODER9_Pos);
+    GPIOB->MODER &= ~(GPIO_MODER_MODER10);
+    GPIOB->MODER |= (0b01 << GPIO_MODER_MODER10_Pos);
+    GPIOC->MODER &= ~(GPIO_MODER_MODER7);
+    GPIOC->MODER |= (0b01 << GPIO_MODER_MODER7_Pos);
+    GPIOA->MODER &= ~(GPIO_MODER_MODER10);
+    GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPD10);
+    GPIOA->PUPDR |= (0b01 << GPIO_PUPDR_PUPD10_Pos);
+    GPIOB->MODER &= ~(GPIO_MODER_MODER3 | GPIO_MODER_MODER4 | GPIO_MODER_MODER5);
+    GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPD3 | GPIO_PUPDR_PUPD5);
+    GPIOB->PUPDR |= (0b01 << GPIO_PUPDR_PUPD3_Pos) | (0b01 << GPIO_PUPDR_PUPD5_Pos);
+    GPIOA->MODER &= ~(GPIO_MODER_MODER5 | GPIO_MODER_MODER6 | GPIO_MODER_MODER7);
+    GPIOA->MODER |= (0b01 << GPIO_MODER_MODER5_Pos) | (0b01 << GPIO_MODER_MODER6_Pos) | (0b01 << GPIO_MODER_MODER7_Pos);
+    GPIOB->MODER &= ~(GPIO_MODER_MODER6);
+    GPIOB->MODER |= (0b01 << GPIO_MODER_MODER6_Pos);
+}
+void PWM_Init(void) {
+    // We will assume 84MHz clock for PWM frequency calculations, but the
+    // delays are now independent of this and based on your calibrated THRESHOLD
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+    RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+    GPIOB->MODER &= ~((3U<<(15*2)) | (3U<<(14*2)) | (3U<<(13*2)) | (3U<<(1*2)));
+    GPIOB->MODER |=  (2U<<(15*2)) | (2U<<(14*2)) | (2U<<(13*2)) | (2U<<(1*2));
+    GPIOB->OSPEEDR &= ~((3U<<(15*2)) | (3U<<(14*2)) | (3U<<(13*2)) | (3U<<(1*2)));
+    GPIOB->OSPEEDR |=  (2U<<(15*2)) | (2U<<(14*2)) | (2U<<(13*2)) | (2U<<(1*2));
+    GPIOB->PUPDR   &= ~((3U<<(15*2)) | (3U<<(14*2)) | (3U<<(13*2)) | (3U<<(1*2)));
+    GPIOB->AFR[1] &= ~((0xFU<<((13-8)*4)) | (0xFU<<((14-8)*4)) | (0xFU<<((15-8)*4)));
+    GPIOB->AFR[1] |=  ((0x1U<<((13-8)*4)) | (0x1U<<((14-8)*4)) | (0x1U<<((15-8)*4)));
+    GPIOB->AFR[0] &= ~(0xFU<<(1*4));
+    GPIOB->AFR[0] |=  (0x2U<<(1*4));
+    TIM1->CR1 = 0; TIM1->PSC = 84 - 1; TIM1->ARR = MAX_BRIGHT - 1;
+    TIM1->CCMR1 &= ~(7U << 4); TIM1->CCMR1 |= (6U << 4); TIM1->CCMR1 |= TIM_CCMR1_OC1PE;
+    TIM1->CCMR1 &= ~(7U << 12); TIM1->CCMR1 |= (6U << 12); TIM1->CCMR1 |= TIM_CCMR1_OC2PE;
+    TIM1->CCMR2 &= ~(7U << 4); TIM1->CCMR2 |= (6U << 4); TIM1->CCMR2 |= TIM_CCMR2_OC3PE;
+    TIM1->CCR1 = 0; TIM1->CCR2 = 0; TIM1->CCR3 = 0;
+    TIM1->CCER = 0; TIM1->CCER |= TIM_CCER_CC1NE; TIM1->CCER |= TIM_CCER_CC2NE; TIM1->CCER |= TIM_CCER_CC3NE;
+    TIM1->BDTR = TIM_BDTR_MOE; TIM1->CR1 |= TIM_CR1_ARPE; TIM1->EGR  = TIM_EGR_UG; TIM1->CR1 |= TIM_CR1_CEN;
+    TIM3->CR1 = 0; TIM3->PSC = 84 - 1; TIM3->ARR = MAX_BRIGHT - 1;
+    TIM3->CCMR2 &= ~(7U << 12); TIM3->CCMR2 |= (6U << 12); TIM3->CCMR2 |= TIM_CCMR2_OC4PE;
+    TIM3->CCR4 = 0; TIM3->CCER = 0; TIM3->CCER |= TIM_CCER_CC4E;
+    TIM3->CR1 |= TIM_CR1_ARPE; TIM3->EGR  = TIM_EGR_UG; TIM3->CR1 |= TIM_CR1_CEN;
+}
+static inline void Set_RGB(uint16_t R, uint16_t G, uint16_t B) {
+    TIM1->CCR3 = clamp_u16(R, TIM1->ARR); TIM1->CCR2 = clamp_u16(G, TIM1->ARR); TIM3->CCR4 = clamp_u16(B, TIM3->ARR);
+}
+void ADC1_POT_Init(void) {
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN; RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+    GPIOA->MODER &= ~GPIO_MODER_MODER4; GPIOA->MODER |= (0b11 << GPIO_MODER_MODER4_Pos);
+    ADC1->CR2 = 0; ADC1->CR2 |= ADC_CR2_ADON; ADC1->SMPR2 &= ~ADC_SMPR2_SMP4;
+    ADC1->SMPR2 |= (0b011 << ADC_SMPR2_SMP4_Pos); ADC1->SQR1 &= ~ADC_SQR1_L;
+    ADC1->SQR3 &= ~ADC_SQR3_SQ1; ADC1->SQR3 |= (4 << ADC_SQR3_SQ1_Pos);
+}
+void UpdateThresholdFromADC(void) {
+    ADC1->CR2 |= ADC_CR2_SWSTART;
+    while(!(ADC1->SR & ADC_SR_EOC));
+    uint32_t adc_value = ADC1->DR;
+    const uint32_t MIN_US = 1000000u; const uint32_t MAX_US = 5000000u;
+    THRESHOLD = MIN_US + (uint32_t)(((uint64_t)adc_value * (MAX_US - MIN_US)) / 4095u);
+}
+static inline void Buzzer_Off(void) { TIM1->CCR1 = 0; }
+static inline void Buzzer_On(uint32_t freq) {
+    uint32_t timer_clk = 1000000;
+    TIM1->ARR = (timer_clk / freq) - 1; TIM1->CCR1 = TIM1->ARR / 2;
+}
+void Buzzer_Note(uint32_t freq, uint32_t ms) {
+    if (freq == 0) { Buzzer_Off(); delay_ms(ms); return; }
+    Buzzer_On(freq); delay_ms(ms); Buzzer_Off(); TIM1->ARR = MAX_BRIGHT - 1;
+}
+void Display_Number(char rx) {
+    GPIOC->ODR &= ~(1 << 7); GPIOA->ODR &= ~((1 << 8) | (1 << 9)); GPIOB->ODR &= ~(1 << 10);
+    if (rx == ' ') return;
+    switch (rx) {
+        case '0': break; case '1': GPIOC->ODR |= (1 << 7); break; case '2': GPIOA->ODR |= (1 << 8); break;
+        case '3': GPIOA->ODR |= (1 << 8); GPIOC->ODR |= (1 << 7); break; case '4': GPIOB->ODR |= (1 << 10); break;
+        case '5': GPIOB->ODR |= (1 << 10); GPIOC->ODR |= (1 << 7); break; case '6': GPIOA->ODR |= (1 << 8); GPIOB->ODR |= (1 << 10); break;
+        case '7': GPIOA->ODR |= (1 << 8); GPIOB->ODR |= (1 << 10); GPIOC->ODR |= (1 << 7); break;
+        case '8': GPIOA->ODR |= (1 << 9); break; case '9': GPIOA->ODR |= (1 << 9); GPIOC->ODR |= (1 << 7); break;
+        default: break;
+    }
+}
+void turn_off_all_lights_lane1(void){ GPIOA->ODR &= ~((1 << 6) | (1 << 7)); GPIOB->ODR &= ~(1 << 6); }
+void set_green_light_lane1(void) { turn_off_all_lights_lane1(); GPIOB->ODR |= (1 << 6); }
+void set_red_light_lane1(void) { turn_off_all_lights_lane1(); GPIOA->ODR |= (1 << 6); }
+void set_yellow_light_lane1(void) { turn_off_all_lights_lane1(); GPIOA->ODR |= (1 << 7); }
+static inline void LED_Red(void) { Set_RGB(MAX_BRIGHT, 0, 0); }
+static inline void LED_Green(void) { Set_RGB(0, MAX_BRIGHT, 0); }
+static inline void LED_Blue(void) { Set_RGB(0, 0, MAX_BRIGHT); }
+static inline void LED_Yellow(void) { Set_RGB(MAX_BRIGHT, MAX_BRIGHT/2, 0); }
+uint32_t countdown_display_lane1(uint32_t seconds, uint32_t car_count_lane) {
+    if (car_count_lane == 0) seconds = seconds - 1;
+    if (seconds > 9) seconds = 9;
+    uint32_t green_duration = (seconds > 2) ? (seconds - 2) : 0;
+    for (int32_t remaining = seconds; remaining >= 0; remaining--) {
+        if (is_emergency_mode) return car_count_lane;
+        UpdateThresholdFromADC();
+        Display_Number('0' + remaining);
+        if (car_count_lane > 0) {
+            if (remaining > 2) { set_green_light_lane1(); } else if (remaining == 2 || remaining == 1) { set_yellow_light_lane1(); } else { set_red_light_lane1(); }
+        } else { set_red_light_lane1(); }
+        LED_Red();
+        delay_ms(1000);
+    }
+    if (car_count_lane > 0) return (car_count_lane > green_duration) ? (car_count_lane - green_duration) : 0;
+    else return 0;
+}
+uint32_t countdown_display_lane2(uint32_t seconds, uint32_t car_count_lane) {
+    if (car_count_lane == 0) seconds = seconds - 1;
+    if (seconds > 9) seconds = 9;
+    uint32_t green_duration = (seconds > 2) ? (seconds - 2) : 0;
+    for (int32_t remaining = seconds; remaining >= 0; remaining--) {
+        if (is_emergency_mode) return car_count_lane;
+        UpdateThresholdFromADC();
+        Display_Number('0' + remaining);
+        if (car_count_lane > 0) {
+            if (remaining > 2) { LED_Green(); } else if (remaining == 2 || remaining == 1) { LED_Yellow(); } else { LED_Red(); }
+        } else { LED_Red(); }
+        set_red_light_lane1();
+        delay_ms(1000);
+    }
+    if (car_count_lane > 0) return (car_count_lane > green_duration) ? (car_count_lane - green_duration) : 0;
+    else return 0;
+}
+uint32_t time_check(uint32_t car_count_check) {
+    if (car_count_check == 0) return 1;
+    return (car_count_check < 10) ? car_count_check : 9;
+}
+void wait_for_release_button(int lane_to_update) {
+    uint8_t prev_PA10 = 1, prev_PB3 = 1;
+    while ((GPIOB->IDR & GPIO_IDR_IDR_5) != 0) {
+        check_emergency_button();
+        if (is_emergency_mode) return;
+        UpdateThresholdFromADC();
+        uint8_t curr_PA10 = (GPIOA->IDR & GPIO_IDR_IDR_10) ? 1 : 0;
+        uint8_t curr_PB3  = (GPIOB->IDR & GPIO_IDR_IDR_3) ? 1 : 0;
+        if (prev_PA10 == 1 && curr_PA10 == 0) {
+            car_count[lane_to_update] = car_count[lane_to_update] + 1;
+            log_car_counts();
+        }
+        prev_PA10 = curr_PA10;
+        if (prev_PB3 == 1 && curr_PB3 == 0) {
+            if (car_count[lane_to_update] > 0) { car_count[lane_to_update] = car_count[lane_to_update] - 1; }
+            log_car_counts();
+        }
+        prev_PB3 = curr_PB3;
+    }
+    if (!is_emergency_mode) { Buzzer_Note(659, 100); }
+}
+void check_emergency_button(void) {
+    static uint8_t prev_PB4_state = 1;
+    uint8_t curr_PB4_state = (GPIOB->IDR & GPIO_IDR_IDR_4) ? 1 : 0;
+    if (prev_PB4_state == 1 && curr_PB4_state == 0) {
+        is_emergency_mode = !is_emergency_mode;
+        if (is_emergency_mode) {
+            log_emergency_on(); car_count[0] = 0; car_count[1] = 0; log_car_counts();
+        } else {
+            log_emergency_off(); car_count[0] = 0; car_count[1] = 0; log_car_counts();
+            Buzzer_Off(); turn_off_all_lights_lane1(); Set_RGB(0, 0, 0); TIM1->ARR = MAX_BRIGHT - 1;
+        }
+        for(volatile int i=0; i<500000; i++);
+    }
+    prev_PB4_state = curr_PB4_state;
+}
+
+int main(void) {
+    // We removed SysTick_Init and are back to the THRESHOLD system.
+    USART2_Init();
+    GPIO_Init();
+    PWM_Init();
+    ADC1_POT_Init();
+
+    vdg_UART_TxString("Traffic Light System Initialized.\r\n");
+    log_car_counts();
+
+    uint32_t t;
+    turn_off_all_lights_lane1();
+
+    while (1) {
+        check_emergency_button();
+
+        if (is_emergency_mode) {
+            // --- EMERGENCY MODE: BLINK YELLOW using THRESHOLD ---
+            Display_Number(' ');
+
+            // --- ON Phase (500ms) ---
+            set_yellow_light_lane1();
+            LED_Yellow();
+            Buzzer_On(880);
+            responsive_threshold_delay(THRESHOLD / 2); // Corrected responsive delay
+            if (!is_emergency_mode) { // Check if mode changed during the delay
+                Buzzer_Off();
+                turn_off_all_lights_lane1();
+                Set_RGB(0,0,0);
+                continue;
+            }
+
+            // --- OFF Phase (500ms) ---
+            turn_off_all_lights_lane1();
+            Set_RGB(0, 0, 0);
+            Buzzer_Off();
+            responsive_threshold_delay(THRESHOLD / 2); // Corrected responsive delay
+
+        } else {
+            // --- NORMAL OPERATION: SEQUENTIAL FLOW ---
+            GPIOA->ODR &= ~(1 << 5);
+            set_red_light_lane1();
+            LED_Red();
+            Display_Number(' ');
+            wait_for_release_button(0);
+            if (is_emergency_mode) continue;
+
+            t = time_check(car_count[0]);
+            car_count[0] = countdown_display_lane1(t + 2, car_count[0]);
+            if (is_emergency_mode) continue;
+            log_remaining_cars(0);
+
+            GPIOA->ODR |= (1 << 5);
+            set_red_light_lane1();
+            LED_Red();
+            Display_Number(' ');
+            wait_for_release_button(1);
+            if (is_emergency_mode) continue;
+
+            t = time_check(car_count[1]);
+            car_count[1] = countdown_display_lane2(t + 2, car_count[1]);
+            if (is_emergency_mode) continue;
+            log_remaining_cars(1);
+        }
+    }
+}
