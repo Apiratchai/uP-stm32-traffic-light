@@ -1,10 +1,9 @@
 # uP-stm32-traffic-light
 Implementation of a simple traffic light system using STM32 Nucleo.
-
-to study how well would a generative AI can assist in low level microcontroller programming with provided datasheets
-
-- vibe coded with Antropic's Cluade Sonnet 4
-- there is  no implementation of RGB SMD yet
+- ~~vibe coded with Antropic's Cluade Sonnet 4~~
+- vibed coded with Antropic's Cluade Sonnet 4, Google Gemini Pro, OpenAI GPT-4
+- with human supervisers and tons of datasheet provided
+- ~~there is  no implementation of RGB SMD yet~~
 
 
 ### Onboards
@@ -28,6 +27,7 @@ to study how well would a generative AI can assist in low level microcontroller 
 - [X] Coolterms
   - [X] Show Temp, Light
   - [X] Show car_counts
+  - [X] Show emergency status
 - [X] Temp (low = do nothing, high = drive DC motor small fan)
 - [ ] Light (low = LED_ON, high = LED_OFF)
 - [X] Time adjust  (THRESHOLD adjust, interrupt maybe) with Potentiometer
