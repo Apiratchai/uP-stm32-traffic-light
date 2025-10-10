@@ -11,23 +11,24 @@ to study how well would a generative AI can assist in low level microcontroller 
 - [X] Buttons
 - [X] LED_builtin
 - [X] 7-Segments
-- [ ] Temp
-- [ ] Light
-- [ ] Potentiometer
+- [X] Temp
+- [X] Light
+- [X] Potentiometer
 
 ### Add-ons
-- [X] SMD
-- [ ] Buzzer
-- [ ] DC motor fac
+- [X] SMD RGB
+- [X] Passive Buzzer
+- [X] DC motor fan + relay
+- [ ] External LED (police post light)
 
 ### Todolist
-- [ ] interrupt emergency mode
-      - [ ] with buzzer sound (PWM freq is possible)
+- [X] interrupt emergency mode
+      - [X] with buzzer sound (PWM freq is possible)
 
-- [ ] Coolterms
-  - [ ] Show Temp, Light
-  - [ ] Show car_counts
-- [ ] Temp (low = do nothing, high = drive DC motor small fan)
+- [X] Coolterms
+  - [X] Show Temp, Light
+  - [X] Show car_counts
+- [X] Temp (low = do nothing, high = drive DC motor small fan)
 - [ ] Light (low = LED_ON, high = LED_OFF)
-- [ ] Time adjust  (THRESHOLD adjust, interrupt maybe) with Potentiometer
+- [X] Time adjust  (THRESHOLD adjust, interrupt maybe) with Potentiometer
 
