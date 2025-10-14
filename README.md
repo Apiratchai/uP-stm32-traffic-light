@@ -18,7 +18,7 @@ Implementation of a simple traffic light system using STM32 Nucleo.
 - [X] SMD RGB
 - [X] Passive Buzzer
 - [X] DC motor fan + relay
-- [ ] External LED (police post light)
+- [X] External LED (police post light)
 
 ### Todolist
 - [X] interrupt emergency mode
@@ -29,6 +29,7 @@ Implementation of a simple traffic light system using STM32 Nucleo.
   - [X] Show car_counts
   - [X] Show emergency status
 - [X] Temp (low = do nothing, high = drive DC motor small fan)
-- [ ] Light (low = LED_ON, high = LED_OFF)
+- [X] Light (low = LED_ON, high = LED_OFF)
 - [X] Time adjust  (THRESHOLD adjust, interrupt maybe) with Potentiometer
+- [X] Buzzer Countdown timer
 
